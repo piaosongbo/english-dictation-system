@@ -1,4 +1,4 @@
-const sqlite3 = require('sqlite3').verbose();
+const Database = require('better-sqlite3');
 const path = require('path');
 
 const DB_PATH = path.join(__dirname, 'database.sqlite');
@@ -7,13 +7,8 @@ let db = null;
 
 function getDatabase() {
   if (!db) {
-    db = new sqlite3.Database(DB_PATH, (err) => {
-      if (err) {
-        console.error('Error opening database:', err);
-      } else {
-        console.log('Connected to SQLite database');
-      }
-    });
+    db = new Database(DB_PATH);
+    console.log('Connected to SQLite database');
   }
   return db;
 }
@@ -22,7 +17,7 @@ function initDatabase() {
   const database = getDatabase();
   
   // Create items table
-  database.run(`
+  database.exec(`
     CREATE TABLE IF NOT EXISTS items (
       id TEXT PRIMARY KEY,
       type TEXT NOT NULL,
@@ -39,7 +34,7 @@ function initDatabase() {
   `);
 
   // Create practice_history table
-  database.run(`
+  database.exec(`
     CREATE TABLE IF NOT EXISTS practice_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       item_id TEXT NOT NULL,
@@ -51,7 +46,7 @@ function initDatabase() {
   `);
 
   // Create settings table
-  database.run(`
+  database.exec(`
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -65,50 +60,30 @@ function initDatabase() {
     { key: 'language', value: 'en' }
   ];
 
+  const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
   defaultSettings.forEach(setting => {
-    database.run(
-      `INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`,
-      [setting.key, setting.value]
-    );
+    insertSetting.run(setting.key, setting.value);
   });
 
   console.log('Database initialized');
 }
 
 function run(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    getDatabase().run(sql, params, function(err) {
-      if (err) {
-        reject(err);
-      } else {
-        resolve({ id: this.lastID, changes: this.changes });
-      }
-    });
-  });
+  const database = getDatabase();
+  const stmt = database.prepare(sql);
+  return stmt.run(params);
 }
 
 function get(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    getDatabase().get(sql, params, (err, row) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(row);
-      }
-    });
-  });
+  const database = getDatabase();
+  const stmt = database.prepare(sql);
+  return stmt.get(params);
 }
 
 function all(sql, params = []) {
-  return new Promise((resolve, reject) => {
-    getDatabase().all(sql, params, (err, rows) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(rows);
-      }
-    });
-  });
+  const database = getDatabase();
+  const stmt = database.prepare(sql);
+  return stmt.all(params);
 }
 
 module.exports = {

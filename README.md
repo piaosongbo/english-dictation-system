@@ -26,11 +26,27 @@ npm run install:all
 
 ### Start Development Server
 
+Open two terminals and run:
+
+**Terminal 1 (Backend):**
 ```bash
-npm run dev
+npm run dev:backend
 ```
 
-This will start both the backend (port 3001) and frontend (port 5173) concurrently.
+**Terminal 2 (Frontend):**
+```bash
+npm run dev:frontend
+```
+
+Or use the following commands directly:
+
+```bash
+# Start backend only
+cd backend && npm run dev
+
+# Start frontend only
+cd frontend && npm run dev
+```
 
 ### Access the App
 
