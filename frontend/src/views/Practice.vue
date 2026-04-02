@@ -14,11 +14,73 @@
     
     <!-- Practice Card -->
     <div v-if="currentItem" class="card">
+      <!-- Mode Toggle & Audio -->
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center space-x-4">
+          <!-- Practice Mode Toggle -->
+          <div class="flex rounded-lg bg-gray-100 p-1">
+            <button
+              @click="practiceMode = 'guide'"
+              class="px-3 py-1 rounded-md text-sm font-medium transition-colors"
+              :class="practiceMode === 'guide' ? 'bg-white shadow-sm' : 'text-gray-600'"
+            >
+              跟写模式
+            </button>
+            <button
+              @click="practiceMode = 'dictation'"
+              class="px-3 py-1 rounded-md text-sm font-medium transition-colors"
+              :class="practiceMode === 'dictation' ? 'bg-white shadow-sm' : 'text-gray-600'"
+            >
+              默写模式
+            </button>
+          </div>
+          
+          <!-- Audio Button -->
+          <button
+            @click="speak"
+            class="flex items-center space-x-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+            :disabled="isSpeaking"
+          >
+            <svg v-if="!isSpeaking" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path>
+            </svg>
+            <svg v-else class="w-5 h-5 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path>
+            </svg>
+            <span>{{ isSpeaking ? '朗读中...' : '朗读' }}</span>
+          </button>
+        </div>
+        
+        <!-- Show Answer Button (Dictation Mode) -->
+        <button
+          v-if="practiceMode === 'dictation'"
+          @click="showAnswer = !showAnswer"
+          class="text-sm text-blue-600 hover:text-blue-800"
+        >
+          {{ showAnswer ? '隐藏答案' : '显示答案' }}
+        </button>
+      </div>
+      
       <!-- Reference Text -->
       <div class="mb-6 p-4 bg-gray-50 rounded-lg">
-        <p class="text-sm text-gray-500 mb-1">Reference:</p>
-        <p class="text-2xl font-handwriting text-gray-900">{{ currentItem.content }}</p>
-        <p v-if="currentItem.translation" class="text-sm text-gray-500 mt-1">{{ currentItem.translation }}</p>
+        <!-- Guide Mode: Show text -->
+        <template v-if="practiceMode === 'guide'">
+          <p class="text-sm text-gray-500 mb-1">Reference:</p>
+          <p class="text-2xl font-handwriting text-gray-900">{{ currentItem.content }}</p>
+          <p v-if="currentItem.translation" class="text-sm text-gray-500 mt-1">{{ currentItem.translation }}</p>
+        </template>
+        
+        <!-- Dictation Mode: Hidden text -->
+        <template v-else>
+          <p class="text-sm text-gray-500 mb-1">请听读音，写出单词/句子：</p>
+          <div v-if="!showAnswer" class="h-10 flex items-center">
+            <span class="text-gray-400 italic">???（点击"显示答案"查看）</span>
+          </div>
+          <div v-else>
+            <p class="text-2xl font-handwriting text-gray-900">{{ currentItem.content }}</p>
+          </div>
+          <p v-if="currentItem.translation" class="text-sm text-gray-500 mt-1"></p>
+        </template>
       </div>
       
       <!-- Writing Canvas -->
@@ -179,6 +241,11 @@ const brushSize = ref(3)
 const brushColor = ref('#1f2937')
 const colors = ['#1f2937', '#dc2626', '#2563eb', '#16a34a']
 
+// Practice mode
+const practiceMode = ref('guide') // 'guide' or 'dictation'
+const showAnswer = ref(false)
+const isSpeaking = ref(false)
+
 const scoreOptions = [
   { value: 4, emoji: '🌟', label: 'Excellent', description: 'Perfect form', selectedClass: 'border-green-500 bg-green-50' },
   { value: 3, emoji: '👍', label: 'Good', description: 'Minor issues', selectedClass: 'border-blue-500 bg-blue-50' },
@@ -192,12 +259,21 @@ onMounted(async () => {
     try {
       const response = await itemsApi.getById(itemId)
       currentItem.value = response.data
+      
+      // Auto-speak when entering dictation mode
+      if (practiceMode.value === 'dictation') {
+        setTimeout(() => speak(), 500)
+      }
     } catch (error) {
       console.error('Failed to load item:', error)
     }
   }
   
-  initCanvas()
+  // Delay canvas init to ensure DOM is ready
+  setTimeout(() => {
+    initCanvas()
+  }, 100)
+  
   window.addEventListener('resize', resizeCanvas)
 })
 
@@ -206,33 +282,63 @@ onUnmounted(() => {
 })
 
 function initCanvas() {
-  if (!canvas.value || !canvasContainer.value) return
+  if (!canvas.value || !canvasContainer.value) {
+    console.warn('Canvas or container not ready')
+    return
+  }
   
   const container = canvasContainer.value
-  canvas.value.width = container.clientWidth
-  canvas.value.height = container.clientHeight
+  const dpr = window.devicePixelRatio || 1
+  
+  // Set display size (css pixels)
+  canvas.value.style.width = container.clientWidth + 'px'
+  canvas.value.style.height = container.clientHeight + 'px'
+  
+  // Set actual size in memory (scaled to account for extra pixel density)
+  canvas.value.width = container.clientWidth * dpr
+  canvas.value.height = container.clientHeight * dpr
   
   ctx.value = canvas.value.getContext('2d')
+  ctx.value.scale(dpr, dpr)
   ctx.value.lineCap = 'round'
   ctx.value.lineJoin = 'round'
   ctx.value.strokeStyle = brushColor.value
   ctx.value.lineWidth = brushSize.value
   
-  // Save initial blank state
+  // Clear history and save initial blank state
+  history.value = []
   saveState()
+  
+  console.log('Canvas initialized:', canvas.value.width, 'x', canvas.value.height)
 }
 
 function resizeCanvas() {
-  if (!canvas.value || !canvasContainer.value) return
+  if (!canvas.value || !canvasContainer.value || !ctx.value) return
   
-  const imageData = ctx.value?.getImageData(0, 0, canvas.value.width, canvas.value.height)
+  // Save current content
+  const imageData = canvas.value.toDataURL()
   
   const container = canvasContainer.value
-  canvas.value.width = container.clientWidth
-  canvas.value.height = container.clientHeight
+  const dpr = window.devicePixelRatio || 1
   
-  if (ctx.value && imageData) {
-    ctx.value.putImageData(imageData, 0, 0)
+  // Resize
+  canvas.value.style.width = container.clientWidth + 'px'
+  canvas.value.style.height = container.clientHeight + 'px'
+  canvas.value.width = container.clientWidth * dpr
+  canvas.value.height = container.clientHeight * dpr
+  
+  // Restore context settings
+  ctx.value.scale(dpr, dpr)
+  ctx.value.lineCap = 'round'
+  ctx.value.lineJoin = 'round'
+  ctx.value.strokeStyle = brushColor.value
+  ctx.value.lineWidth = brushSize.value
+  
+  // Restore content
+  const img = new Image()
+  img.src = imageData
+  img.onload = () => {
+    ctx.value.drawImage(img, 0, 0, container.clientWidth, container.clientHeight)
   }
 }
 
@@ -298,13 +404,17 @@ function undo() {
   const img = new Image()
   img.src = previousState
   img.onload = () => {
-    ctx.value.clearRect(0, 0, canvas.value.width, canvas.value.height)
-    ctx.value.drawImage(img, 0, 0)
+    if (!ctx.value || !canvas.value) return
+    const container = canvasContainer.value
+    ctx.value.clearRect(0, 0, container.clientWidth, container.clientHeight)
+    ctx.value.drawImage(img, 0, 0, container.clientWidth, container.clientHeight)
   }
 }
 
 function clearCanvas() {
-  ctx.value.clearRect(0, 0, canvas.value.width, canvas.value.height)
+  if (!ctx.value || !canvas.value) return
+  const container = canvasContainer.value
+  ctx.value.clearRect(0, 0, container.clientWidth, container.clientHeight)
   saveState()
 }
 
@@ -343,4 +453,41 @@ watch(() => brushColor.value, (newColor) => {
     ctx.value.strokeStyle = newColor
   }
 })
+
+// Watch for mode change - auto speak in dictation mode
+watch(() => practiceMode.value, (newMode) => {
+  if (newMode === 'dictation' && currentItem.value) {
+    showAnswer.value = false
+    setTimeout(() => speak(), 300)
+  }
+})
+
+// Text to speech function
+function speak() {
+  if (!currentItem.value || !window.speechSynthesis) return
+  
+  // Cancel any ongoing speech
+  window.speechSynthesis.cancel()
+  
+  // Speak Chinese translation instead of English
+  const textToSpeak = currentItem.value.translation || currentItem.value.content
+  const utterance = new SpeechSynthesisUtterance(textToSpeak)
+  utterance.lang = 'zh-CN'
+  utterance.rate = 1
+  utterance.pitch = 1
+  
+  utterance.onstart = () => {
+    isSpeaking.value = true
+  }
+  
+  utterance.onend = () => {
+    isSpeaking.value = false
+  }
+  
+  utterance.onerror = () => {
+    isSpeaking.value = false
+  }
+  
+  window.speechSynthesis.speak(utterance)
+}
 </script>

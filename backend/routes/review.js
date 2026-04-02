@@ -1,5 +1,13 @@
 const express = require('express');
-const { run, get, all } = require('../database');
+const { 
+  getDueItems,
+  getAllItems,
+  getItemById,
+  updateItem,
+  addPracticeHistory,
+  getPracticeHistory,
+  getSetting
+} = require('../database');
 
 const router = express.Router();
 
@@ -7,19 +15,10 @@ const router = express.Router();
 const INTERVALS = [1, 2, 4, 7, 15, 30];
 
 // Get today's review items
-router.get('/today', async (req, res) => {
+router.get('/today', (req, res) => {
   try {
-    const settings = await get("SELECT value FROM settings WHERE key = 'daily_review_count'");
-    const dailyLimit = parseInt(settings?.value || '10');
-    
-    const items = await all(
-      `SELECT * FROM items 
-       WHERE next_review <= datetime('now') 
-       ORDER BY next_review ASC 
-       LIMIT ?`,
-      [dailyLimit]
-    );
-    
+    const dailyLimit = parseInt(getSetting('daily_review_count') || '10');
+    const items = getDueItems(dailyLimit);
     res.json(items);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -27,39 +26,38 @@ router.get('/today', async (req, res) => {
 });
 
 // Get review count
-router.get('/count', async (req, res) => {
+router.get('/count', (req, res) => {
   try {
-    const result = await get(
-      `SELECT COUNT(*) as count FROM items WHERE next_review <= datetime('now')`
-    );
-    res.json({ count: result.count });
+    const items = getDueItems();
+    res.json({ count: items.length });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 // Submit practice result
-router.post('/:id/practice', async (req, res) => {
+router.post('/:id/practice', (req, res) => {
   try {
     const { score, accuracy } = req.body;
     const itemId = req.params.id;
     
-    // Record practice history
-    await run(
-      `INSERT INTO practice_history (item_id, score, accuracy) VALUES (?, ?, ?)`,
-      [itemId, score, accuracy]
-    );
-    
     // Get current item state
-    const item = await get('SELECT * FROM items WHERE id = ?', [itemId]);
+    const item = getItemById(itemId);
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
     }
     
+    // Record practice history
+    addPracticeHistory({
+      item_id: itemId,
+      score,
+      accuracy
+    });
+    
     // Calculate next review using Ebbinghaus-inspired algorithm
-    let newLevel = item.level;
-    let newInterval = item.interval_days;
-    let newEaseFactor = item.ease_factor;
+    let newLevel = item.level || 0;
+    let newInterval = item.interval_days || 0;
+    let newEaseFactor = item.ease_factor || 2.5;
     
     // Score levels: 4=Excellent, 3=Good, 2=Pass, 1=Needs Work
     if (score >= 3) {
@@ -82,16 +80,13 @@ router.post('/:id/practice', async (req, res) => {
     nextReview.setDate(nextReview.getDate() + newInterval);
     
     // Update item
-    await run(
-      `UPDATE items SET 
-        next_review = ?,
-        review_count = review_count + 1,
-        level = ?,
-        ease_factor = ?,
-        interval_days = ?
-       WHERE id = ?`,
-      [nextReview.toISOString(), newLevel, newEaseFactor, newInterval, itemId]
-    );
+    updateItem(itemId, {
+      next_review: nextReview.toISOString(),
+      review_count: (item.review_count || 0) + 1,
+      level: newLevel,
+      ease_factor: newEaseFactor,
+      interval_days: newInterval
+    });
     
     res.json({
       message: 'Practice recorded',
@@ -105,20 +100,37 @@ router.post('/:id/practice', async (req, res) => {
 });
 
 // Get practice history
-router.get('/history', async (req, res) => {
+router.get('/history', (req, res) => {
   try {
     const { days = 7 } = req.query;
-    const history = await all(
-      `SELECT 
-        date(practiced_at) as date,
-        COUNT(*) as count,
-        AVG(score) as avg_score
-       FROM practice_history 
-       WHERE practiced_at >= datetime('now', '-${days} days')
-       GROUP BY date(practiced_at)
-       ORDER BY date DESC`
-    );
-    res.json(history);
+    const history = getPracticeHistory();
+    
+    // Filter by days and group by date
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - parseInt(days));
+    
+    const filtered = history.filter(h => new Date(h.practiced_at) >= cutoffDate);
+    
+    // Group by date
+    const grouped = filtered.reduce((acc, h) => {
+      const date = h.practiced_at.split('T')[0];
+      if (!acc[date]) {
+        acc[date] = { date, count: 0, totalScore: 0 };
+      }
+      acc[date].count++;
+      acc[date].totalScore += h.score;
+      return acc;
+    }, {});
+    
+    const result = Object.values(grouped)
+      .map(g => ({
+        date: g.date,
+        count: g.count,
+        avg_score: g.totalScore / g.count
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date));
+    
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

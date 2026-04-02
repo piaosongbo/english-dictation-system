@@ -1,10 +1,10 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Home from './views/Home.vue'
-import Upload from './views/Upload.vue'
-import Practice from './views/Practice.vue'
-import Review from './views/Review.vue'
-import WordBank from './views/WordBank.vue'
-import Settings from './views/Settings.vue'
+import Home from '../views/Home.vue'
+import Upload from '../views/Upload.vue'
+import Practice from '../views/Practice.vue'
+import Review from '../views/Review.vue'
+import WordBank from '../views/WordBank.vue'
+import Settings from '../views/Settings.vue'
 
 const routes = [
   { path: '/', name: 'Home', component: Home },

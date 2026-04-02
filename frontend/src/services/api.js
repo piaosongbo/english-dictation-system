@@ -41,4 +41,9 @@ export const uploadApi = {
   ocr: (imageUrl) => api.post('/upload/ocr', { imageUrl })
 }
 
+// Translate API
+export const translateApi = {
+  translate: (text, from = 'en', to = 'zh') => api.post('/translate', { text, from, to })
+}
+
 export default api

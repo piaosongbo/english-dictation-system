@@ -1,94 +1,113 @@
-const Database = require('better-sqlite3');
-const path = require('path');
+// Simple in-memory database for demo
+// In production, replace with proper SQLite or other database
 
-const DB_PATH = path.join(__dirname, 'database.sqlite');
-
-let db = null;
-
-function getDatabase() {
-  if (!db) {
-    db = new Database(DB_PATH);
-    console.log('Connected to SQLite database');
-  }
-  return db;
-}
+const items = [];
+const practiceHistory = [];
+const settings = {
+  daily_review_count: '10',
+  theme: 'light',
+  language: 'en'
+};
 
 function initDatabase() {
-  const database = getDatabase();
-  
-  // Create items table
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS items (
-      id TEXT PRIMARY KEY,
-      type TEXT NOT NULL,
-      content TEXT NOT NULL,
-      translation TEXT,
-      image_path TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      next_review DATETIME DEFAULT CURRENT_TIMESTAMP,
-      review_count INTEGER DEFAULT 0,
-      level INTEGER DEFAULT 0,
-      ease_factor REAL DEFAULT 2.5,
-      interval_days INTEGER DEFAULT 0
-    )
-  `);
+  console.log('In-memory database initialized');
+}
 
-  // Create practice_history table
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS practice_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      item_id TEXT NOT NULL,
-      score INTEGER NOT NULL,
-      accuracy REAL,
-      practiced_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (item_id) REFERENCES items(id)
-    )
-  `);
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
 
-  // Create settings table
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    )
-  `);
+// Items CRUD
+function createItem(item) {
+  const newItem = {
+    id: generateId(),
+    ...item,
+    created_at: new Date().toISOString(),
+    next_review: new Date().toISOString(),
+    review_count: 0,
+    level: 0,
+    ease_factor: 2.5,
+    interval_days: 0
+  };
+  items.push(newItem);
+  return newItem;
+}
 
-  // Insert default settings
-  const defaultSettings = [
-    { key: 'daily_review_count', value: '10' },
-    { key: 'theme', value: 'light' },
-    { key: 'language', value: 'en' }
-  ];
+function getAllItems() {
+  return items;
+}
 
-  const insertSetting = database.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
-  defaultSettings.forEach(setting => {
-    insertSetting.run(setting.key, setting.value);
+function getItemById(id) {
+  return items.find(item => item.id === id);
+}
+
+function updateItem(id, updates) {
+  const index = items.findIndex(item => item.id === id);
+  if (index !== -1) {
+    items[index] = { ...items[index], ...updates };
+    return items[index];
+  }
+  return null;
+}
+
+function deleteItem(id) {
+  const index = items.findIndex(item => item.id === id);
+  if (index !== -1) {
+    items.splice(index, 1);
+    return true;
+  }
+  return false;
+}
+
+// Practice history
+function addPracticeHistory(record) {
+  practiceHistory.push({
+    id: generateId(),
+    ...record,
+    practiced_at: new Date().toISOString()
   });
-
-  console.log('Database initialized');
 }
 
-function run(sql, params = []) {
-  const database = getDatabase();
-  const stmt = database.prepare(sql);
-  return stmt.run(params);
+function getPracticeHistory(itemId) {
+  if (itemId) {
+    return practiceHistory.filter(h => h.item_id === itemId);
+  }
+  return practiceHistory;
 }
 
-function get(sql, params = []) {
-  const database = getDatabase();
-  const stmt = database.prepare(sql);
-  return stmt.get(params);
+// Settings
+function getSetting(key) {
+  return settings[key];
 }
 
-function all(sql, params = []) {
-  const database = getDatabase();
-  const stmt = database.prepare(sql);
-  return stmt.all(params);
+function setSetting(key, value) {
+  settings[key] = value;
+}
+
+function getAllSettings() {
+  return { ...settings };
+}
+
+// Get items due for review
+function getDueItems(limit = 10) {
+  const now = new Date().toISOString();
+  return items
+    .filter(item => item.next_review <= now)
+    .sort((a, b) => new Date(a.next_review) - new Date(b.next_review))
+    .slice(0, limit);
 }
 
 module.exports = {
   initDatabase,
-  run,
-  get,
-  all
+  createItem,
+  getAllItems,
+  getItemById,
+  updateItem,
+  deleteItem,
+  addPracticeHistory,
+  getPracticeHistory,
+  getSetting,
+  setSetting,
+  getAllSettings,
+  getDueItems
 };

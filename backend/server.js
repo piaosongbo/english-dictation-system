@@ -5,6 +5,7 @@ const itemsRouter = require('./routes/items');
 const reviewRouter = require('./routes/review');
 const settingsRouter = require('./routes/settings');
 const uploadRouter = require('./routes/upload');
+const translateRouter = require('./routes/translate');
 const { initDatabase } = require('./database');
 
 const app = express();
@@ -23,12 +24,15 @@ app.use('/api/items', itemsRouter);
 app.use('/api/review', reviewRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/upload', uploadRouter);
+app.use('/api/translate', translateRouter);
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Local: http://localhost:${PORT}`);
+  console.log(`Network: http://0.0.0.0:${PORT}`);
 });

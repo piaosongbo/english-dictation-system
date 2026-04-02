@@ -1,29 +1,37 @@
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
-const { run, get, all } = require('../database');
+const { 
+  getAllItems, 
+  getItemById, 
+  createItem, 
+  updateItem, 
+  deleteItem,
+  addPracticeHistory,
+  getPracticeHistory
+} = require('../database');
 
 const router = express.Router();
 
 // Get all items
-router.get('/', async (req, res) => {
+router.get('/', (req, res) => {
   try {
     const { type, search } = req.query;
-    let sql = 'SELECT * FROM items WHERE 1=1';
-    const params = [];
+    let items = getAllItems();
     
     if (type) {
-      sql += ' AND type = ?';
-      params.push(type);
+      items = items.filter(item => item.type === type);
     }
     
     if (search) {
-      sql += ' AND (content LIKE ? OR translation LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`);
+      const searchLower = search.toLowerCase();
+      items = items.filter(item => 
+        item.content.toLowerCase().includes(searchLower) || 
+        (item.translation && item.translation.toLowerCase().includes(searchLower))
+      );
     }
     
-    sql += ' ORDER BY created_at DESC';
+    // Sort by created_at desc
+    items.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     
-    const items = await all(sql, params);
     res.json(items);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -31,9 +39,9 @@ router.get('/', async (req, res) => {
 });
 
 // Get single item
-router.get('/:id', async (req, res) => {
+router.get('/:id', (req, res) => {
   try {
-    const item = await get('SELECT * FROM items WHERE id = ?', [req.params.id]);
+    const item = getItemById(req.params.id);
     if (!item) {
       return res.status(404).json({ error: 'Item not found' });
     }
@@ -44,18 +52,21 @@ router.get('/:id', async (req, res) => {
 });
 
 // Create item
-router.post('/', async (req, res) => {
+router.post('/', (req, res) => {
   try {
     const { type, content, translation, image_path } = req.body;
-    const id = uuidv4();
     
-    await run(
-      `INSERT INTO items (id, type, content, translation, image_path, next_review) 
-       VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-      [id, type, content, translation, image_path]
-    );
+    if (!type || !content) {
+      return res.status(400).json({ error: 'Type and content are required' });
+    }
     
-    const item = await get('SELECT * FROM items WHERE id = ?', [id]);
+    const item = createItem({
+      type,
+      content,
+      translation,
+      image_path
+    });
+    
     res.status(201).json(item);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -63,16 +74,15 @@ router.post('/', async (req, res) => {
 });
 
 // Update item
-router.put('/:id', async (req, res) => {
+router.put('/:id', (req, res) => {
   try {
     const { content, translation } = req.body;
     
-    await run(
-      'UPDATE items SET content = ?, translation = ? WHERE id = ?',
-      [content, translation, req.params.id]
-    );
+    const item = updateItem(req.params.id, { content, translation });
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
     
-    const item = await get('SELECT * FROM items WHERE id = ?', [req.params.id]);
     res.json(item);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -80,10 +90,12 @@ router.put('/:id', async (req, res) => {
 });
 
 // Delete item
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', (req, res) => {
   try {
-    await run('DELETE FROM practice_history WHERE item_id = ?', [req.params.id]);
-    await run('DELETE FROM items WHERE id = ?', [req.params.id]);
+    const success = deleteItem(req.params.id);
+    if (!success) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
     res.json({ message: 'Item deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -91,12 +103,9 @@ router.delete('/:id', async (req, res) => {
 });
 
 // Get item statistics
-router.get('/:id/stats', async (req, res) => {
+router.get('/:id/stats', (req, res) => {
   try {
-    const history = await all(
-      'SELECT * FROM practice_history WHERE item_id = ? ORDER BY practiced_at DESC',
-      [req.params.id]
-    );
+    const history = getPracticeHistory(req.params.id);
     
     const avgScore = history.length > 0 
       ? history.reduce((sum, h) => sum + h.score, 0) / history.length 
